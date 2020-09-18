@@ -10521,3 +10521,10 @@ type ACLTokenUpsertResponse struct {
 	Tokens []*ACLToken
 	WriteMeta
 }
+
+type EventStreamRequest struct {
+	Topics map[string][]string
+	Index  int
+	Follow bool
+	QueryOptions
+}

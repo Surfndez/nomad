@@ -131,7 +131,9 @@ func (c *changeTrackerDB) WriteTxnRestore() *txn {
 // error. Any errors from the callback would be lost,  which would result in a
 // missing change event, even though the state store had changed.
 type txn struct {
+	// ctx is used to hold message type information from an FSM request
 	ctx context.Context
+
 	*memdb.Txn
 	// Index in raft where the write is occurring. The value is zero for a
 	// read-only, or WriteTxnRestore transaction.
@@ -166,6 +168,9 @@ func (tx *txn) Commit() error {
 	return nil
 }
 
+// MsgType returns a MessageType from the txn's context.
+// If the context is empty or the value isn't set IgnoreUnknownTypeFlag will
+// be returned to signal that the MsgType is unknown.
 func (tx *txn) MsgType() structs.MessageType {
 	if tx.ctx == nil {
 		return structs.IgnoreUnknownTypeFlag

@@ -2,9 +2,9 @@ package taskrunner
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
-	hclog "github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-version"
 	ifs "github.com/hashicorp/nomad/client/allocrunner/interfaces"
 	"github.com/hashicorp/nomad/client/consul"
@@ -19,12 +19,9 @@ const (
 	// envoyLegacyImage is used when the version of Consul is too old to support
 	// the SupportedProxies field in the self API.
 	//
-	// This is the version defaulted by Nomad before v1.0.
+	// This is the version defaulted by Nomad before v0.13.0 and/or when using versions
+	// of Consul before v1.7.8, v1.8.5, and v1.9.0.
 	envoyLegacyImage = "envoyproxy/envoy:v1.11.2@sha256:a7769160c9c1a55bb8d07a3b71ce5d64f72b1f665f10d81aa1581bc3cf850d09"
-
-	// envoyImageFormat is the format string used for official envoy Docker images
-	// with the tag being the semver of the version of envoy.
-	envoyImageFormat = "envoyproxy/envoy:%s"
 )
 
 type envoyVersionHookConfig struct {
@@ -65,7 +62,7 @@ func (envoyVersionHook) Name() string {
 	return envoyVersionHookName
 }
 
-func (h *envoyVersionHook) Prestart(ctx context.Context, request *ifs.TaskPrestartRequest, response *ifs.TaskPrestartResponse) error {
+func (h *envoyVersionHook) Prestart(_ context.Context, request *ifs.TaskPrestartRequest, response *ifs.TaskPrestartResponse) error {
 	if h.skip(request) {
 		response.Done = true
 		return nil
@@ -96,16 +93,16 @@ func (h *envoyVersionHook) skip(request *ifs.TaskPrestartRequest) bool {
 		return true
 	case !request.Task.UsesConnectSidecar():
 		return true
-	case !h.isSentinel(request.Task.Config):
+	case !h.needsVersion(request.Task.Config):
 		return true
 	}
 	return false
 }
 
-// isSentinel returns true if the docker.config.image value has been left to
-// Nomad's default sentinel value, indicating that Nomad and Consul should work
-// together to determine the best Envoy version to use.
-func (_ *envoyVersionHook) isSentinel(config map[string]interface{}) bool {
+// needsVersion returns true if the docker.config.image is making use of the fake
+// ${NOMAD_envoy_version}
+// Nomad does not need to query Consul to get the preferred Envoy version, etc.)
+func (_ *envoyVersionHook) needsVersion(config map[string]interface{}) bool {
 	if len(config) == 0 {
 		return false
 	}
@@ -115,11 +112,11 @@ func (_ *envoyVersionHook) isSentinel(config map[string]interface{}) bool {
 		return false
 	}
 
-	return image == structs.ConnectEnvoySentinel
+	return strings.Contains(image, structs.EnvoyVersionVar)
 }
 
-// image determines the best Envoy version to use. if supported is nil or empty
-// Nomad will fallback to the legacy envoy image used before Nomad v1.0.
+// image determines the best Envoy version to use. If supported is nil or empty
+// Nomad will fallback to the legacy envoy image used before Nomad v0.13.
 func (_ *envoyVersionHook) image(supported map[string][]string) (string, error) {
 	versions := supported["envoy"]
 	if len(versions) == 0 {
@@ -131,15 +128,19 @@ func (_ *envoyVersionHook) image(supported map[string][]string) (string, error) 
 		return "", err
 	}
 
-	return fmt.Sprintf(envoyImageFormat, latest), nil
+	return strings.ReplaceAll(structs.EnvoyImageFormat, structs.EnvoyVersionVar, latest), nil
 }
 
 // semver sanitizes the envoy version string coming from Consul into the format
-// used by the Envoy project when publishing images (i.e. proper semver).
+// used by the Envoy project when publishing images (i.e. proper semver). This
+// resulting string value does NOT contain the 'v' prefix for 2 reasons:
+// 1) the version library does not include the 'v'
+// 2) its plausible unofficial images use the 3 numbers without the prefix for
+//    tagging their own images
 func semver(chosen string) (string, error) {
 	v, err := version.NewVersion(chosen)
 	if err != nil {
 		return "", errors.Wrap(err, "unexpected envoy version format")
 	}
-	return "v" + v.String(), nil
+	return v.String(), nil
 }

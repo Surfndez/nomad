@@ -68,15 +68,19 @@ func (h *envoyVersionHook) Prestart(_ context.Context, request *ifs.TaskPrestart
 		return nil
 	}
 
-	// it's either legacy or manageable, need to know consul version
+	// We either need to acquire Consul's preferred Envoy version or fallback
+	// to the legacy default - query Consul to find out.
+
 	proxies, err := h.proxiesClient.Proxies()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "error retrieving supported Envoy versions from Consul")
 	}
 
-	image, err := h.image(proxies)
+	// Determine the concrete Envoy image identifier by applying version string
+	// substitution (${NOMAD_envoy_version}).
+	image, err := h.tweakImage(h.taskImage(request.Task.Config), proxies)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "error interpreting desired Envoy version from Consul")
 	}
 
 	h.logger.Trace("setting task envoy image", "image", image)
@@ -99,25 +103,40 @@ func (h *envoyVersionHook) skip(request *ifs.TaskPrestartRequest) bool {
 	return false
 }
 
+// getConfiguredImage extracts the configured config.image value from the request.
+// If the image is empty or not a string, Nomad will fallback to the normal
+// official Envoy image as if the setting was not configured. This is also what
+// Nomad would do if the sidecar_task was not set in the first place.
+func (_ *envoyVersionHook) taskImage(config map[string]interface{}) string {
+	value, exists := config["image"]
+	if !exists {
+		return structs.EnvoyImageFormat
+	}
+
+	image, ok := value.(string)
+	if !ok {
+		return structs.EnvoyImageFormat
+	}
+
+	return image
+}
+
 // needsVersion returns true if the docker.config.image is making use of the fake
 // ${NOMAD_envoy_version}
 // Nomad does not need to query Consul to get the preferred Envoy version, etc.)
-func (_ *envoyVersionHook) needsVersion(config map[string]interface{}) bool {
+func (h *envoyVersionHook) needsVersion(config map[string]interface{}) bool {
 	if len(config) == 0 {
 		return false
 	}
 
-	image, ok := config["image"].(string)
-	if !ok {
-		return false
-	}
+	image := h.taskImage(config)
 
 	return strings.Contains(image, structs.EnvoyVersionVar)
 }
 
 // image determines the best Envoy version to use. If supported is nil or empty
 // Nomad will fallback to the legacy envoy image used before Nomad v0.13.
-func (_ *envoyVersionHook) image(supported map[string][]string) (string, error) {
+func (_ *envoyVersionHook) tweakImage(configured string, supported map[string][]string) (string, error) {
 	versions := supported["envoy"]
 	if len(versions) == 0 {
 		return envoyLegacyImage, nil
@@ -128,7 +147,7 @@ func (_ *envoyVersionHook) image(supported map[string][]string) (string, error) 
 		return "", err
 	}
 
-	return strings.ReplaceAll(structs.EnvoyImageFormat, structs.EnvoyVersionVar, latest), nil
+	return strings.ReplaceAll(configured, structs.EnvoyVersionVar, latest), nil
 }
 
 // semver sanitizes the envoy version string coming from Consul into the format

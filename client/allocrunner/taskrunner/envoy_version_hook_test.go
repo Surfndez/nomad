@@ -73,14 +73,14 @@ func TestEnvoyVersionHook_tweakImage(t *testing.T) {
 
 	t.Run("unexpected", func(t *testing.T) {
 		_, err := (*envoyVersionHook)(nil).tweakImage(image, map[string][]string{
-			"envoy": []string{"foo", "bar", "baz"},
+			"envoy": {"foo", "bar", "baz"},
 		})
 		require.EqualError(t, err, "unexpected envoy version format: Malformed version: foo")
 	})
 
 	t.Run("standard envoy", func(t *testing.T) {
 		result, err := (*envoyVersionHook)(nil).tweakImage(image, map[string][]string{
-			"envoy": []string{"1.15.0", "1.14.4", "1.13.4", "1.12.6"},
+			"envoy": {"1.15.0", "1.14.4", "1.13.4", "1.12.6"},
 		})
 		require.NoError(t, err)
 		require.Equal(t, "envoyproxy/envoy:v1.15.0", result)
@@ -89,7 +89,7 @@ func TestEnvoyVersionHook_tweakImage(t *testing.T) {
 	t.Run("custom image", func(t *testing.T) {
 		custom := "custom-${NOMAD_envoy_version}/envoy:${NOMAD_envoy_version}"
 		result, err := (*envoyVersionHook)(nil).tweakImage(custom, map[string][]string{
-			"envoy": []string{"1.15.0", "1.14.4", "1.13.4", "1.12.6"},
+			"envoy": {"1.15.0", "1.14.4", "1.13.4", "1.12.6"},
 		})
 		require.NoError(t, err)
 		require.Equal(t, "custom-1.15.0/envoy:1.15.0", result)
@@ -175,7 +175,7 @@ func TestTaskRunner_EnvoyVersionHook_Prestart_standard(t *testing.T) {
 	// Setup a mock for Consul API
 	spAPI := consul.MockSupportedProxiesAPI{
 		Value: map[string][]string{
-			"envoy": []string{"1.15.0", "1.14.4"},
+			"envoy": {"1.15.0", "1.14.4"},
 		},
 		Error: nil,
 	}
@@ -219,7 +219,7 @@ func TestTaskRunner_EnvoyVersionHook_Prestart_custom(t *testing.T) {
 	// Setup a mock for Consul API
 	spAPI := consul.MockSupportedProxiesAPI{
 		Value: map[string][]string{
-			"envoy": []string{"1.14.1", "1.13.3"},
+			"envoy": {"1.14.1", "1.13.3"},
 		},
 		Error: nil,
 	}
@@ -266,7 +266,7 @@ func TestTaskRunner_EnvoyVersionHook_Prestart_skip(t *testing.T) {
 	// Setup a mock for Consul API
 	spAPI := consul.MockSupportedProxiesAPI{
 		Value: map[string][]string{
-			"envoy": []string{"1.14.1", "1.13.3"},
+			"envoy": {"1.14.1", "1.13.3"},
 		},
 		Error: nil,
 	}
@@ -293,6 +293,47 @@ func TestTaskRunner_EnvoyVersionHook_Prestart_skip(t *testing.T) {
 
 	// Assert the Task.Config[image] does not get set
 	require.Empty(t, request.Task.Config["image"])
+}
+
+func TestTaskRunner_EnvoyVersionHook_Prestart_fallback(t *testing.T) {
+	t.Parallel()
+
+	logger := testlog.HCLogger(t)
+
+	// Setup an Allocation
+	alloc := mock.ConnectAlloc()
+	alloc.Job.TaskGroups[0].Tasks[0] = mock.ConnectSidecarTask()
+	allocDir, cleanupDir := allocdir.TestAllocDir(t, logger, "EnvoyVersionHook")
+	defer cleanupDir()
+
+	// Setup a mock for Consul API
+	spAPI := consul.MockSupportedProxiesAPI{
+		Value: nil, // old consul, no .xDS.SupportedProxies
+		Error: nil,
+	}
+
+	// Run envoy_version hook
+	h := newEnvoyVersionHook(newEnvoyVersionHookConfig(alloc, spAPI, logger))
+
+	// Create a prestart request
+	request := &ifs.TaskPrestartRequest{
+		Task:    alloc.Job.TaskGroups[0].Tasks[0],
+		TaskDir: allocDir.NewTaskDir(alloc.Job.TaskGroups[0].Tasks[0].Name),
+		TaskEnv: taskenv.NewEmptyTaskEnv(),
+	}
+	require.NoError(t, request.TaskDir.Build(false, nil))
+
+	// Prepare a response
+	var response ifs.TaskPrestartResponse
+
+	// Run the hook
+	require.NoError(t, h.Prestart(context.Background(), request, &response))
+
+	// Assert the hook is Done
+	require.True(t, response.Done)
+
+	// Assert the Task.Config[image] is the fallback image
+	require.Equal(t, "envoyproxy/envoy:v1.11.2@sha256:a7769160c9c1a55bb8d07a3b71ce5d64f72b1f665f10d81aa1581bc3cf850d09", request.Task.Config["image"])
 }
 
 func TestTaskRunner_EnvoyVersionHook_Prestart_error(t *testing.T) {

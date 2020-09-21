@@ -39,6 +39,7 @@ import (
 	"github.com/hashicorp/nomad/helper/constraints/semver"
 	"github.com/hashicorp/nomad/helper/uuid"
 	"github.com/hashicorp/nomad/lib/kheap"
+	"github.com/hashicorp/nomad/nomad/stream"
 	psstructs "github.com/hashicorp/nomad/plugins/shared/structs"
 )
 
@@ -10523,7 +10524,7 @@ type ACLTokenUpsertResponse struct {
 }
 
 type EventStreamRequest struct {
-	Topics map[string][]string
+	Topics map[stream.Topic][]string
 	Index  int
 	Follow bool
 	QueryOptions

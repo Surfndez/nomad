@@ -95,7 +95,12 @@ func (e *EventPublisher) Subscribe(req *SubscribeRequest) (*Subscription, error)
 		e.logger.Warn("requested index no longer in buffer", "requsted", int(req.Index), "closest", int(head.Index))
 	}
 
-	sub := newSubscription(req, head, func() {})
+	// Empty head so that calling Next on sub
+	start := newBufferItem(req.Index, []Event{})
+	start.link.next.Store(head)
+	close(start.link.ch)
+
+	sub := newSubscription(req, start, func() {})
 
 	e.subscriptions.add(req, sub)
 	return sub, nil

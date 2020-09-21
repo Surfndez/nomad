@@ -23,16 +23,21 @@ func TestEventStream_QueryParse(t *testing.T) {
 			},
 		},
 		{
+			desc:  "all topics and keys inferred",
+			query: "",
+			want: map[string][]string{
+				"*": []string{"*"},
+			},
+		},
+		{
 			desc:    "invalid key value formatting",
 			query:   "?topic=NodeDrain:*:*",
 			wantErr: true,
 		},
 		{
-			desc:  "all topics and keys inferred",
-			query: "?",
-			want: map[string][]string{
-				"*": []string{"*"},
-			},
+			desc:    "invalid key value formatting no value",
+			query:   "?topic=NodeDrain",
+			wantErr: true,
 		},
 		{
 			desc:  "single topic and key",

@@ -275,6 +275,7 @@ type endpoints struct {
 	ACL        *ACL
 	Scaling    *Scaling
 	Enterprise *EnterpriseEndpoints
+	Event      *Event
 
 	// Client endpoints
 	ClientStats       *ClientStats
@@ -1162,6 +1163,9 @@ func (s *Server) setupRpcServer(server *rpc.Server, ctx *RPCContext) {
 
 		s.staticEndpoints.Agent = &Agent{srv: s}
 		s.staticEndpoints.Agent.register()
+
+		s.staticEndpoints.Event = &Event{srv: s}
+		s.staticEndpoints.Event.register()
 	}
 
 	// Register the static handlers

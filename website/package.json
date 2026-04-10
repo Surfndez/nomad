@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "author": "HashiCorp",
   "dependencies": {
-    "@hashicorp/nextjs-scripts": "10.0.2",
+    "@hashicorp/nextjs-scripts": "19.0.3",
     "@hashicorp/react-alert-banner": "3.1.0",
     "@hashicorp/react-button": "2.2.1",
     "@hashicorp/react-call-to-action": "0.2.1",
@@ -34,7 +34,7 @@
     "imagemin-optipng": "8.0.0",
     "imagemin-svgo": "8.0.0",
     "marked": "0.7.0",
-    "next": "9.4.4",
+    "next": "15.5.14",
     "nuka-carousel": "4.7.0",
     "react": "16.13.1",
     "react-device-detect": "1.13.1",
